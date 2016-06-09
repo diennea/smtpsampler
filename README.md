@@ -3,7 +3,7 @@ SMTP Server Benchmark
 
   SMTP Sampler is a very simple but powerful command line tool you can use to bench your SMTP server.
 
-  Is is ispired by the historic "postal" SMTP Benchmark tool but it add some more feature, like SMTP Authentication
+  Is was ispired by the historic "postal" SMTP Benchmark tool, see https://doc.coker.com.au/projects/postal/
 
 ## Getting started
 

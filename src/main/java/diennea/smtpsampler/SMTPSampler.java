@@ -70,7 +70,7 @@ public class SMTPSampler {
             
             options.addOption("n", "nummessages", true, "Number of messages, defaults to 1");
             options.addOption("tx", "numthreads", true, "Number of concurrent threads/connections");
-            options.addOption("to", "timeout", true, "Max time for execution of the test, in seconds, defaults to 0, which means 'forever'");
+            options.addOption("tt", "timeout", true, "Max time for execution of the test, in seconds, defaults to 0, which means 'forever'");
             options.addOption("v", "verbose", false, "Verbose output");
             options.addOption("stls", "starttls", false, "Use STARTTLS");
             options.addOption("d", "javamaildebug", false, "Enable JavaMail Debug");            

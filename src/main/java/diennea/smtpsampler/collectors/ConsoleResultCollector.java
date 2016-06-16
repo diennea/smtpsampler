@@ -81,12 +81,13 @@ public class ConsoleResultCollector implements ResultCollector {
         long testFinishTs = System.currentTimeMillis();
         long totalTestTime = testFinishTs - testStartTs;
         System.out.println("Report:");
-        System.out.println("Total time: " + (totalTestTime / 1000) + " s (Wall Clock) - (" + ((int)(totalTime.doubleValue()/1000)) + " s total time)");
+        System.out.println("Total time: " + (totalTestTime / 1000) + " s (Wall Clock) - (" + ((int) (totalTime.doubleValue() / 1000)) + " s total time)");
         System.out.println("Total messages: " + messageCount);
         System.out.println("Delivered messages: " + deliveredMessageCount);
         System.out.println("Failed messages: " + failedMessageCount);
         System.out.println("Failed connections: " + failedConnectionsCount);
-        System.out.println("Average message delivery time: " + ((int) ((messageCount.doubleValue() * 1000d) / totalTime.doubleValue())) + " msg/s");
+        System.out.println("Average message delivery time: " + ((int) (totalTime.doubleValue() / messageCount.doubleValue())) + " ms");
+        System.out.println("Average message delivery speed: " + ((int) ((messageCount.doubleValue() * 1000d) / totalTime.doubleValue())) + " msg/s");
         System.out.println("Total thoughtput: " + ((int) ((messageCount.doubleValue() * 1000d) / totalTestTime)) + " msg/s");
     }
 

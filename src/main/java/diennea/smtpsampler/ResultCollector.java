@@ -26,17 +26,18 @@ package diennea.smtpsampler;
  */
 public interface ResultCollector {
 
-    public default void start() {
-    }
+    public void start();
 
-    public default void finished() {
-    }
+    public void finishSend();
+    
+    public void finishReceive();
+    
+    public void finished();
 
-    public default void messageSent(int connectionId, int i, long delta, String lastServerResponse, Throwable error) {
+    public void messageSent(int connectionId, int i, long delta, String lastServerResponse, Throwable error);
 
-    }
-
-    public default void fatalErrorOnConnection(int connectionId, Throwable error) {
-    }
+    public void fatalErrorOnConnection(int connectionId, Throwable error);
+    
+    public void messageReceived(long delta , long originaldelta, Throwable error);
 
 }

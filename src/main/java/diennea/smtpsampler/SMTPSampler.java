@@ -19,26 +19,36 @@
  */
 package diennea.smtpsampler;
 
-import diennea.smtpsampler.collectors.ConsoleResultCollector;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetAddress;
 import java.nio.file.Files;
 import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+
 import javax.mail.Message;
 import javax.mail.MessagingException;
 import javax.mail.Session;
 import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
+
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Option;
-import org.apache.commons.cli.OptionGroup;
 import org.apache.commons.cli.Options;
+import org.subethamail.smtp.MessageContext;
+import org.subethamail.smtp.MessageHandler;
+import org.subethamail.smtp.MessageHandlerFactory;
+import org.subethamail.smtp.RejectException;
+import org.subethamail.smtp.TooMuchDataException;
+import org.subethamail.smtp.server.SMTPServer;
+
+import diennea.smtpsampler.collectors.ConsoleResultCollector;
 
 /**
  * Benchs an SMTPServer
@@ -53,6 +63,10 @@ public class SMTPSampler {
     }
 
     public static void main(String... args) {
+        
+        MessageReceiver receiver = null;
+        boolean listen = false;
+        
         try {
             DefaultParser parser = new DefaultParser();
             Options options = new Options();            
@@ -73,7 +87,12 @@ public class SMTPSampler {
             options.addOption("tt", "timeout", true, "Max time for execution of the test, in seconds, defaults to 0, which means 'forever'");
             options.addOption("v", "verbose", false, "Verbose output");
             options.addOption("stls", "starttls", false, "Use STARTTLS");
-            options.addOption("d", "javamaildebug", false, "Enable JavaMail Debug");            
+            options.addOption("d", "javamaildebug", false, "Enable JavaMail Debug");
+            
+            options.addOption("l", "listen", false, "Listen on a generated inbound SMTP Server for message delivery");
+            options.addOption("lh", "listenhost", true, "SMTP Server hostname or IP Address, default to localhost");
+            options.addOption("lp", "listenport", true, "SMTP Server port, default to 25");
+            
             CommandLine commandLine = parser.parse(options, args);
             if (args.length == 0) {
                 HelpFormatter formatter = new HelpFormatter();
@@ -98,6 +117,10 @@ public class SMTPSampler {
             int numthreads = Integer.parseInt(commandLine.getOptionValue("numthreads", "1"));
             int timeout_seconds = Integer.parseInt(commandLine.getOptionValue("timeout", "0"));
             String file = commandLine.getOptionValue("file", "");
+            
+            listen = commandLine.hasOption("listen");
+            String listenhost = commandLine.getOptionValue("listenhost", "localhos");
+            int listenport = Integer.parseInt(commandLine.getOptionValue("listenport", "25"));
 
             File messagefile = null;
             if (!file.isEmpty()) {
@@ -120,9 +143,13 @@ public class SMTPSampler {
                 System.out.println("\tnummessages:" + nummessages);
                 System.out.println("\tnummessagesperconnection:" + nummessagesperconnection);
                 System.out.println("\tnumthreads:" + numthreads);
+                System.out.println("\tlisten:" + listen);
+                System.out.println("\tlistenhost:" + listenhost);
+                System.out.println("\tlistenport:" + listenport);
                 System.out.println("\ttimeout:" + timeout_seconds);
                 System.out.println("\tverbose:" + verbose);
                 System.out.println("\tjavamaildebug:" + javamaildebug);
+                
             }
 
             if (!auth) {
@@ -131,6 +158,9 @@ public class SMTPSampler {
             } else if (username.trim().isEmpty()) {
                 throw new Exception("Username is required with -auth flag");
             }
+            
+            
+            
             Properties props = new Properties();
             props.putAll(System.getProperties());
             if (starttls) {
@@ -143,16 +173,27 @@ public class SMTPSampler {
             }
             Session session = Session.getDefaultInstance(props);
 
-            ResultCollector collector = new ConsoleResultCollector(verbose);
+            ResultCollector collector = new ConsoleResultCollector(verbose,listen);
+            
+            if (listen)
+            {
+                receiver = new MessageReceiver(collector, nummessages, listenhost, listenport);
+                receiver.start();
+            }
+            
             MimeMessage msg = buildMessage(session, subject, from, to, messagesize, messagefile);
 
             collector.start();
+            
             ExecutorService service = Executors.newFixedThreadPool(numthreads);
             int numConnections = nummessages / nummessagesperconnection;
-            for (int connectionId = 1; connectionId <= numConnections; connectionId++) {
-                SendMessageTask task = new SendMessageTask(connectionId, session, collector, msg, host, port, username, password, nummessagesperconnection);
-                service.submit(task);
-            }
+            for (int connectionId = 1; connectionId <= numConnections; connectionId++)
+                service.submit( new SendMessageTask(connectionId, session, collector, msg, host, port, username, password, nummessagesperconnection) );
+            
+            int remaining = nummessages - (numConnections * nummessagesperconnection); 
+            if ( remaining > 0 )
+                service.submit( new SendMessageTask(numConnections +1, session, collector, msg, host, port, username, password, nummessagesperconnection) );
+            
             service.shutdown();
             if (timeout_seconds > 0) {
                 boolean finished = service.awaitTermination(timeout_seconds, TimeUnit.SECONDS);
@@ -160,11 +201,28 @@ public class SMTPSampler {
                     throw new Exception("Test not finished in time");
                 }
             } else {
-                service.awaitTermination(Integer.MAX_VALUE, TimeUnit.DAYS);
+                service.awaitTermination(Integer.MAX_VALUE, TimeUnit.DAYS);                
             }
+            
+            collector.finishSend();
+            
+            if( listen )
+            {
+                receiver.await();
+                collector.finishReceive();
+            }
+            
+            
             collector.finished();
-        } catch (Exception ex) {
+            
+        } catch (Exception ex)
+        {
             reportFatalError(ex);
+            
+        } finally
+        {
+            if ( listen )
+                receiver.stop();
         }
 
     }
@@ -187,4 +245,5 @@ public class SMTPSampler {
             return msg;
         }
     }
+    
 }

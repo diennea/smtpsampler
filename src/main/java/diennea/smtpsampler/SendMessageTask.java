@@ -20,6 +20,8 @@
 package diennea.smtpsampler;
 
 import com.sun.mail.smtp.SMTPTransport;
+
+import javax.mail.MessagingException;
 import javax.mail.Session;
 import javax.mail.internet.MimeMessage;
 
@@ -49,7 +51,13 @@ public class SendMessageTask implements Runnable {
         this.connectionId = connectionId;
         this.session = session;
         this.collector = collector;
-        this.msg = msg;
+        
+        MimeMessage copy = null;
+        try { copy = new MimeMessage(msg); } 
+        catch (MessagingException e) { /* SOAK */ copy = msg; }
+        
+        this.msg = copy;
+        
         this.numMessages = numMessages;
         this.host = host;
         this.port = port;
@@ -64,13 +72,17 @@ public class SendMessageTask implements Runnable {
             try {
                 transport.connect(host, port, username, password);
                 for (int i = 0; i < numMessages; i++) {
-                    long _msgStart = System.currentTimeMillis();
+                    long _msgStart = System.nanoTime();
+                    
+                    msg.setHeader("X-START-BENCHMARK", Long.toString(_msgStart ));
+                    msg.saveChanges();
+                    
                     try {
                         transport.sendMessage(msg, msg.getAllRecipients());
-                        long _msgEnd = System.currentTimeMillis();
+                        long _msgEnd = System.nanoTime();
                         collector.messageSent(connectionId, i, _msgEnd - _msgStart, transport.getLastServerResponse(), null);
                     } catch (Exception err) {
-                        long _msgEnd = System.currentTimeMillis();
+                        long _msgEnd = System.nanoTime();
                         collector.messageSent(connectionId, i, _msgEnd - _msgStart, transport.getLastServerResponse(), err);
                         break;
                     }

@@ -26,14 +26,20 @@ SMTP Server Benchmark
 ##  Reference
 
 ```
-  usage: smtpsampler [-a] [-d] [-f <arg>] [-h <arg>] [-mf <arg>] [-ms <arg>]
-       [-n <arg>] [-p <arg>] [-pwd <arg>] [-s <arg>] [-stls] [-t <arg>]
-       [-to <arg>] [-tx <arg>] [-u <arg>] [-v]
+  usage: smtpsampler [-a] [-d] [-f <arg>] [-h <arg>] [-l] [-lh <arg>] [-lp
+       <arg>] [-mf <arg>] [-ms <arg>] [-n <arg>] [-p <arg>] [-pwd <arg>]
+       [-s <arg>] [-stls] [-t <arg>] [-tt <arg>] [-tx <arg>] [-u <arg>]
+       [-v]
  -a,--auth                 Use authentication
  -d,--javamaildebug        Enable JavaMail Debug
  -f,--from <arg>           Value for the From header of the test message
  -h,--host <arg>           SMTP Server hostname or IP Address, default to
                            localhost
+ -l,--listen               Listen on a generated inbound SMTP Server for
+                           message delivery
+ -lh,--listenhost <arg>    SMTP Server hostname or IP Address, default to
+                           localhost
+ -lp,--listenport <arg>    SMTP Server port, default to 25
  -mf,--file <arg>          Use file as message and do not generate a test
                            message
  -ms,--messagesize <arg>   Size of the body of the generated message,
@@ -44,7 +50,7 @@ SMTP Server Benchmark
  -s,--subject <arg>        Subject of the generated email
  -stls,--starttls          Use STARTTLS
  -t,--to <arg>             Value for the To header of the test message
- -to,--timeout <arg>       Max time for execution of the test, in seconds,
+ -tt,--timeout <arg>       Max time for execution of the test, in seconds,
                            defaults to 0, which means 'forever'
  -tx,--numthreads <arg>    Number of concurrent threads/connections
  -u,--username <arg>       Username

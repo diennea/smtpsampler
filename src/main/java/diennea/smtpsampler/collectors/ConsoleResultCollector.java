@@ -165,7 +165,10 @@ public class ConsoleResultCollector implements ResultCollector {
         
         System.out.println("Failed messages: " + failedMessageCount);
         System.out.println("Failed connections: " + failedConnectionsCount);
-        System.out.println("Failed received message: " + failedMessageReceivedCount);
+        
+        if (receive)
+            System.out.println("Failed received message: " + failedMessageReceivedCount);
+        
         System.out.println("Average message delivery time: " + TimeUnit.NANOSECONDS.toMillis((long)(sendTime.doubleValue() / messageCount.doubleValue())) + " ms");
         System.out.println("Average message delivery speed: " + format.format((messageCount.doubleValue() * 1000_000_000d) / totalSendTime) + " msg/s " +
                 " (" + format.format((messageCount.doubleValue() * 1000_000_000d) / sendTime.doubleValue()) + " msg/s on total send time)");
@@ -178,7 +181,7 @@ public class ConsoleResultCollector implements ResultCollector {
                     " (" + format.format((originalReceiveCount.doubleValue() * 1000_000_000d) / originalReceiveTime.doubleValue()) + " msg/s on total round trip time)");
         }
         
-        System.out.println("Total thoughtput: " + ((int) ((messageCount.doubleValue() * 1000_000_000d) / totalTestTime)) + " msg/s");
+        System.out.println("Total thoughtput: " + format.format((messageCount.doubleValue() * 1000_000_000d) / totalTestTime) + " msg/s");
     }
 
     @Override

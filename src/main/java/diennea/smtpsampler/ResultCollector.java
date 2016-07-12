@@ -34,10 +34,10 @@ public interface ResultCollector {
     
     public void finished();
 
-    public void messageSent(int connectionId, int i, long delta, String lastServerResponse, Throwable error);
-
-    public void fatalErrorOnConnection(int connectionId, Throwable error);
+    public void messageSent(int connectionId, int messageNumber, long nanoseconds, String lastServerResponse, Throwable error);
     
-    public void messageReceived(long delta , long originaldelta, Throwable error);
+    public void connectionHandled(int connectionId, long nanoseconds, Throwable error );
+    
+    public void messageReceived(long nanoseconds);
 
 }

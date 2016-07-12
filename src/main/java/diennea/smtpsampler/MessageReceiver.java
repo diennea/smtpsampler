@@ -4,7 +4,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import javax.mail.MessagingException;
 import javax.mail.internet.MimeMessage;
@@ -16,14 +20,22 @@ import org.subethamail.smtp.RejectException;
 import org.subethamail.smtp.TooMuchDataException;
 import org.subethamail.smtp.server.SMTPServer;
 
+/**
+ * Receive messages, collect receive times and matches them with send time
+ * 
+ * @author diego.salvi
+ */
 public class MessageReceiver
 {
     private final ResultCollector resultCollector;
-    private final CountDownLatch countDown;
+    private final String messageIDHeader;
     
+    private final CountDownLatch countDown;
     private final SMTPServer server;
     
-    public MessageReceiver( ResultCollector resultCollector, int messages, String host, int port ) throws UnknownHostException
+    private final ConcurrentMap<Integer,Long> messageIDReceiveNanos;
+    
+    public MessageReceiver( ResultCollector resultCollector, int messages, String host, int port, String messageIDHeader ) throws UnknownHostException
     {
         server = new SMTPServer( new MessageHandlerFactory()
         {
@@ -40,7 +52,27 @@ public class MessageReceiver
         server.setPort(port);
         
         this.resultCollector = resultCollector;
+        this.messageIDHeader = messageIDHeader;
+        
         this.countDown = new CountDownLatch(messages);
+        this.messageIDReceiveNanos = new ConcurrentHashMap<>(messages);
+    }
+    
+    public void flushResults(Map<Integer,Long> messageIDSendNanos)
+    {
+        
+        for( Map.Entry<Integer,Long> entry : messageIDReceiveNanos.entrySet() )
+        {
+            Integer messageID = entry.getKey();
+            
+            Long receive = messageIDReceiveNanos.get(messageID);
+            Long send    = messageIDSendNanos.get(messageID);
+            
+            if ( send != null )
+                resultCollector.messageReceived(receive-send);
+        }
+        
+        
     }
     
     public void start()
@@ -53,37 +85,18 @@ public class MessageReceiver
         server.stop();
     }
     
-    public void await()
+    public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException
     {
-        boolean complete = false;
-        
-        
-        while ( !complete )
-            try
-            {
-                countDown.await();
-                complete = true;
-            } catch (InterruptedException e) {}
-        
+        return countDown.await(timeout, unit);
     }
 
     private final class CountingHandler implements MessageHandler
     {   
-        private long start;
-        private long originalStart;
-        private long end;
-        
-        private boolean dataRead;
+        private String messageID;
         
         public CountingHandler()
         {
             super();
-            
-            this.start = System.nanoTime();
-            this.originalStart = -1;
-            this.end = -1;
-            
-            this.dataRead = false;
         }
 
         
@@ -98,31 +111,22 @@ public class MessageReceiver
         {
             try
             {
+               MimeMessage message = new MimeMessage(null,data);
                 
-                MimeMessage message = new MimeMessage(null,data);
-                
-                String start = message.getHeader("X-START-BENCHMARK",null);
-                
-                if ( start != null )
-                    originalStart = Long.valueOf(start);
+               messageID = message.getHeader(messageIDHeader,null);
                 
             } catch (MessagingException e)
             {
-                throw new IOException( e );
+                throw new IOException(e);
             }
-            
-            dataRead = true;
         }
 
         @Override
         public void done()
         {
-            end = System.nanoTime();
+            long end = System.nanoTime();
             
-            if (dataRead)
-                resultCollector.messageReceived(end-start, originalStart > -1 ? end-originalStart : -1, null);
-            else
-                resultCollector.messageReceived(end-start, originalStart > -1 ? end-originalStart : -1, new RuntimeException("No received data"));
+            messageIDReceiveNanos.put(Integer.valueOf(messageID), end);
             
             countDown.countDown();
         }

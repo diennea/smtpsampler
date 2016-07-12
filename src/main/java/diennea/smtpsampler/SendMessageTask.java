@@ -19,80 +19,162 @@
  */
 package diennea.smtpsampler;
 
-import com.sun.mail.smtp.SMTPTransport;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.mail.MessagingException;
 import javax.mail.Session;
 import javax.mail.internet.MimeMessage;
 
+import com.sun.mail.smtp.SMTPTransport;
+
 /**
- * Procedue which actually delivers the message
- *
+ * Procedure deliver messages.
+ * 
+ * @author diego.salvi
  * @author enrico.olivelli
  */
-public class SendMessageTask implements Runnable {
-
-    final Session session;
-    final ResultCollector collector;
-    final MimeMessage msg;
-    final String host;
-    final int port;
-    final String username;
-    final String password;
-    final int numMessages;
-    final int connectionId;
-
-    public SendMessageTask(int connectionId, Session session, ResultCollector collector, MimeMessage msg,
-            final String host,
-            final int port,
-            final String username,
-            final String password,
-            final int numMessages) {
-        this.connectionId = connectionId;
-        this.session = session;
+public class SendMessageTask implements Callable<Map<Integer,Long>>
+{
+    private final ResultCollector collector;
+    
+    private final String host;
+    private final int port;
+    private final String username;
+    private final String password;
+    
+    private final Session session;
+    private final MimeMessage message;
+    
+    private final int messageCount;
+    
+    private final int connectionID;
+    private final AtomicInteger messageIDGenerator;
+    private final String messageIDHeader;
+    
+    public SendMessageTask(
+            ResultCollector collector,
+            String host,
+            int port,
+            String username,
+            String password,
+            Session session,
+            MimeMessage message,
+            int messageCount,
+            AtomicInteger connectionIDGenerator,
+            AtomicInteger messageIDGenerator,
+            String messageIDHeader)
+    {
+        super();
+        
         this.collector = collector;
-        
-        MimeMessage copy = null;
-        try { copy = new MimeMessage(msg); } 
-        catch (MessagingException e) { /* SOAK */ copy = msg; }
-        
-        this.msg = copy;
-        
-        this.numMessages = numMessages;
         this.host = host;
         this.port = port;
         this.username = username;
         this.password = password;
+        this.session = session;
+        
+        try
+        {
+            /* We need a copy because its headers will be modified */
+            this.message = new MimeMessage(message);
+            
+        } catch (MessagingException e)
+        {
+            /* Should never occur */
+            throw new RuntimeException("Cannot copy message");
+        }
+        
+        this.messageCount = messageCount;
+        this.connectionID = connectionIDGenerator.getAndIncrement();
+        this.messageIDGenerator = messageIDGenerator;
+        this.messageIDHeader = messageIDHeader;
     }
-
+    
     @Override
-    public void run() {
-        try {
+    public Map<Integer,Long> call() throws Exception
+    {
+        Map<Integer,Long> result = new HashMap<>(messageCount);
+        
+        long mtime = 0;
+        long stime = 0;        
+        long cstart = System.nanoTime();
+        
+        try
+        {
             SMTPTransport transport = (SMTPTransport) session.getTransport("smtp");
-            try {
+            
+            try
+            {
                 transport.connect(host, port, username, password);
-                for (int i = 0; i < numMessages; i++) {
-                    long _msgStart = System.nanoTime();
+                
+                for (int i = 0; i < messageCount; i++)
+                {
                     
-                    msg.setHeader("X-START-BENCHMARK", Long.toString(_msgStart ));
-                    msg.saveChanges();
+                    long mstart = -1, mend = -1;
                     
-                    try {
-                        transport.sendMessage(msg, msg.getAllRecipients());
-                        long _msgEnd = System.nanoTime();
-                        collector.messageSent(connectionId, i, _msgEnd - _msgStart, transport.getLastServerResponse(), null);
-                    } catch (Exception err) {
-                        long _msgEnd = System.nanoTime();
-                        collector.messageSent(connectionId, i, _msgEnd - _msgStart, transport.getLastServerResponse(), err);
+                    mstart = System.nanoTime();
+                    
+                    /*
+                     * Generate a message id and add it to the message, it will
+                     * be needed to recognize received messages.
+                     */
+                    int messageID = messageIDGenerator.getAndIncrement();
+                    
+                    message.setHeader(messageIDHeader, Integer.toString(messageID));
+                    message.saveChanges();
+                    
+                    mend = System.nanoTime();
+                    
+                    mtime += mend - mstart;
+                    
+                    long start = mend;
+                    try
+                    {
+                        transport.sendMessage(message, message.getAllRecipients());
+                        
+                        long end = System.nanoTime();
+                        long cstime = end - start;
+                        stime += cstime;
+                        
+                        collector.messageSent(connectionID, i, cstime, transport.getLastServerResponse(), null);
+                        
+                    } catch (Exception err)
+                    {
+                        long end = System.nanoTime();
+                        long cstime = end - start;
+                        stime += cstime;
+                        
+                        collector.messageSent(connectionID, i, cstime, transport.getLastServerResponse(), err);
                         break;
                     }
+                    
+                    /*
+                     * Adds message id start time after message send to not
+                     * account map time into message send time
+                     */
+                    result.put(messageID, start);
                 }
-            } finally {
+                
+            } finally
+            {
                 transport.close();
             }
-        } catch (Throwable error) {
-            collector.fatalErrorOnConnection(connectionId, error);
+            
+            long cend = System.nanoTime();
+            
+            collector.connectionHandled(connectionID, cend - cstart - mtime - stime, null);
+            
+        } catch (Throwable error)
+        {
+            long cend = System.nanoTime();
+            
+            collector.connectionHandled(connectionID, cend - cstart - mtime - stime, error);
         }
+        
+        return result;
     }
 
 }

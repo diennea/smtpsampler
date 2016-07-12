@@ -22,14 +22,17 @@ package diennea.smtpsampler;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.InetAddress;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.mail.Message;
 import javax.mail.MessagingException;
@@ -41,12 +44,6 @@ import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
-import org.subethamail.smtp.MessageContext;
-import org.subethamail.smtp.MessageHandler;
-import org.subethamail.smtp.MessageHandlerFactory;
-import org.subethamail.smtp.RejectException;
-import org.subethamail.smtp.TooMuchDataException;
-import org.subethamail.smtp.server.SMTPServer;
 
 import diennea.smtpsampler.collectors.ConsoleResultCollector;
 
@@ -83,6 +80,7 @@ public class SMTPSampler {
             options.addOption("t", "to", true, "Value for the To header of the test message");
             
             options.addOption("n", "nummessages", true, "Number of messages, defaults to 1");
+            options.addOption("nc", "nummessagesperconnection", true, "Number of messages per connection, defaults to 1");
             options.addOption("tx", "numthreads", true, "Number of concurrent threads/connections");
             options.addOption("tt", "timeout", true, "Max time for execution of the test, in seconds, defaults to 0, which means 'forever'");
             options.addOption("v", "verbose", false, "Verbose output");
@@ -112,10 +110,21 @@ public class SMTPSampler {
             int messagesize = Integer.parseInt(commandLine.getOptionValue("messagesize", "10"));
             String from = commandLine.getOptionValue("from", "from@localhost");
             String to = commandLine.getOptionValue("to", "to@localhost");
+            
+            int numthreads = Integer.parseInt(commandLine.getOptionValue("numthreads", "1"));
+            
             int nummessages = Integer.parseInt(commandLine.getOptionValue("nummessages", "1"));
             int nummessagesperconnection = Integer.parseInt(commandLine.getOptionValue("nummessagesperconnection", "1"));
-            int numthreads = Integer.parseInt(commandLine.getOptionValue("numthreads", "1"));
+            
+            if ( nummessages < numthreads )
+                throw new Exception("Number of messages must be greater or equal to thread number");
+            
+            /* Correct num messages per connection if nummessages is too low (to force all thread use) */
+            nummessagesperconnection = Math.min( nummessages / numthreads, nummessagesperconnection );
+            
             int timeout_seconds = Integer.parseInt(commandLine.getOptionValue("timeout", "0"));
+            boolean hasTimeout = timeout_seconds > 0;
+            long timeout_millis = TimeUnit.SECONDS.toMillis(timeout_seconds);
             String file = commandLine.getOptionValue("file", "");
             
             listen = commandLine.hasOption("listen");
@@ -163,53 +172,107 @@ public class SMTPSampler {
             
             Properties props = new Properties();
             props.putAll(System.getProperties());
-            if (starttls) {
+            if (starttls)
+            {
                 props.put("mail.smtp.starttls.enable", "true");
                 props.put("mail.smtp.ssl.trust", "*");
                 props.put("mail.smtp.starttls.required", "true");
             }
-            if (javamaildebug) {
+            if (javamaildebug)
+            {
                 props.put("mail.debug", "true");
             }
+            
             Session session = Session.getDefaultInstance(props);
 
             ResultCollector collector = new ConsoleResultCollector(verbose,listen);
             
+            String messageIDHeader = "X-BENCHMARK-MESSAGE-ID";
+            AtomicInteger connectionIDGenerator = new AtomicInteger(0);
+            AtomicInteger messageIDGenerator = new AtomicInteger(0);
+            
             if (listen)
             {
-                receiver = new MessageReceiver(collector, nummessages, listenhost, listenport);
+                receiver = new MessageReceiver(collector, nummessages, listenhost, listenport, messageIDHeader);
                 receiver.start();
             }
             
-            MimeMessage msg = buildMessage(session, subject, from, to, messagesize, messagefile);
+            MimeMessage message = buildMessage(session, subject, from, to, messagesize, messagefile);
 
             collector.start();
             
             ExecutorService service = Executors.newFixedThreadPool(numthreads);
-            int numConnections = nummessages / nummessagesperconnection;
-            for (int connectionId = 1; connectionId <= numConnections; connectionId++)
-                service.submit( new SendMessageTask(connectionId, session, collector, msg, host, port, username, password, nummessagesperconnection) );
             
-            int remaining = nummessages - (numConnections * nummessagesperconnection); 
-            if ( remaining > 0 )
-                service.submit( new SendMessageTask(numConnections +1, session, collector, msg, host, port, username, password, nummessagesperconnection) );
+
+            
+            
+            final List<Future<Map<Integer,Long>>> messageIDSendNanosFutures = new ArrayList<>(numthreads);
+            
+            /* Just for timeout, expressed in seconds we don't need fine grained data */
+            long start = System.currentTimeMillis();
+            
+            int remaining = nummessages; 
+            while( remaining > 0 )
+            {
+                int messageCount = Math.min(remaining, nummessagesperconnection);
+                remaining -= messageCount;
+                
+                messageIDSendNanosFutures.add(
+                        service.submit(
+                                new SendMessageTask(
+                                        collector,
+                                        host,
+                                        port,
+                                        username,
+                                        password,
+                                        session,
+                                        message,
+                                        messageCount,
+                                        connectionIDGenerator,
+                                        messageIDGenerator,
+                                        messageIDHeader) ) );
+            }
             
             service.shutdown();
-            if (timeout_seconds > 0) {
-                boolean finished = service.awaitTermination(timeout_seconds, TimeUnit.SECONDS);
-                if (!finished) {
+            if (hasTimeout)
+            {
+                boolean finished = service.awaitTermination(timeout_millis, TimeUnit.MILLISECONDS);
+                if (!finished)
                     throw new Exception("Test not finished in time");
-                }
-            } else {
+            } else
+            {
                 service.awaitTermination(Integer.MAX_VALUE, TimeUnit.DAYS);                
+            }
+            
+            if (hasTimeout)
+            {
+                long now = System.currentTimeMillis();
+                
+                timeout_millis = Math.max(0, timeout_millis - (now - start));
             }
             
             collector.finishSend();
             
+            
             if( listen )
             {
-                receiver.await();
+                if (hasTimeout)
+                {
+                    boolean finished = receiver.awaitTermination(timeout_millis, TimeUnit.MILLISECONDS);
+                    if (!finished)
+                        throw new Exception("Test not finished in time");
+                } else
+                {
+                    receiver.awaitTermination(Integer.MAX_VALUE, TimeUnit.DAYS);                
+                }
+                
                 collector.finishReceive();
+                
+                final Map<Integer,Long> messageIDSendNanos = new HashMap<Integer,Long>();
+                for( Future<Map<Integer,Long>> future : messageIDSendNanosFutures )
+                    future.get().entrySet().stream().forEach(entry -> messageIDSendNanos.put(entry.getKey(), entry.getValue()));
+                
+                receiver.flushResults(messageIDSendNanos);
             }
             
             

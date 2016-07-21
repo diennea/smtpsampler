@@ -128,7 +128,7 @@ public class SMTPSampler {
             String file = commandLine.getOptionValue("file", "");
             
             listen = commandLine.hasOption("listen");
-            String listenhost = commandLine.getOptionValue("listenhost", "localhos");
+            String listenhost = commandLine.getOptionValue("listenhost", "localhost");
             int listenport = Integer.parseInt(commandLine.getOptionValue("listenport", "25"));
 
             File messagefile = null;

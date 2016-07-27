@@ -38,6 +38,6 @@ public interface ResultCollector {
     
     public void connectionHandled(int connectionId, long nanoseconds, Throwable error );
     
-    public void messageReceived(long nanoseconds);
+    public void messageReceived(long receivens, long beforesendns, long aftersendns);
 
 }

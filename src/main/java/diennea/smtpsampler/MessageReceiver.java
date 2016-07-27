@@ -58,7 +58,7 @@ public class MessageReceiver
         this.messageIDReceiveNanos = new ConcurrentHashMap<>(messages);
     }
     
-    public void flushResults(Map<Integer,Long> messageIDSendNanos)
+    public void flushResults(Map<Integer,Long> messageIDBeforeSendNanos, Map<Integer,Long> messageIDAfterSendNanos)
     {
         
         for( Map.Entry<Integer,Long> entry : messageIDReceiveNanos.entrySet() )
@@ -66,10 +66,11 @@ public class MessageReceiver
             Integer messageID = entry.getKey();
             
             Long receive = messageIDReceiveNanos.get(messageID);
-            Long send    = messageIDSendNanos.get(messageID);
+            Long before  = messageIDBeforeSendNanos.get(messageID);
+            Long after   = messageIDAfterSendNanos.get(messageID);
             
-            if ( send != null )
-                resultCollector.messageReceived(receive-send);
+            if ( before != null )
+                resultCollector.messageReceived(receive, before, after);
         }
         
         

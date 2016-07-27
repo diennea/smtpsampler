@@ -30,14 +30,38 @@ import javax.mail.internet.MimeMessage;
 
 import com.sun.mail.smtp.SMTPTransport;
 
+import diennea.smtpsampler.SendMessageTask.Result;
+
 /**
  * Procedure deliver messages.
  * 
  * @author diego.salvi
  * @author enrico.olivelli
  */
-public class SendMessageTask implements Callable<Map<Integer,Long>>
+public class SendMessageTask implements Callable<Result>
 {
+    public static final class Result
+    {
+        private final Map<Integer,Long> messageIDBeforeSendNanos;
+        private final Map<Integer,Long> messageIDAfterSendNanos;
+        
+        private Result( int size )
+        {
+            messageIDBeforeSendNanos = new HashMap<>(size);
+            messageIDAfterSendNanos = new HashMap<>(size);
+        }
+
+        public Map<Integer, Long> getMessageIDBeforeSendNanos()
+        {
+            return messageIDBeforeSendNanos;
+        }
+
+        public Map<Integer, Long> getMessageIDAfterSendNanos()
+        {
+            return messageIDAfterSendNanos;
+        }
+    }
+    
     private final ResultCollector collector;
     
     private final String host;
@@ -94,9 +118,10 @@ public class SendMessageTask implements Callable<Map<Integer,Long>>
     }
     
     @Override
-    public Map<Integer,Long> call() throws Exception
+    public Result call() throws Exception
     {
-        Map<Integer,Long> result = new HashMap<>(messageCount);
+        final Result result = new Result(messageCount);
+//        Map<Integer,Long> result = new HashMap<>(messageCount);
         
         long mtime = 0;
         long stime = 0;        
@@ -130,21 +155,22 @@ public class SendMessageTask implements Callable<Map<Integer,Long>>
                     
                     mtime += mend - mstart;
                     
-                    long start = mend;
+                    long before = mend;
+                    long after;
                     try
                     {
                         transport.sendMessage(message, message.getAllRecipients());
                         
-                        long end = System.nanoTime();
-                        long cstime = end - start;
+                        after = System.nanoTime();
+                        long cstime = after - before;
                         stime += cstime;
                         
                         collector.messageSent(connectionID, i, cstime, transport.getLastServerResponse(), null);
                         
                     } catch (Exception err)
                     {
-                        long end = System.nanoTime();
-                        long cstime = end - start;
+                        after = System.nanoTime();
+                        long cstime = after - before;
                         stime += cstime;
                         
                         collector.messageSent(connectionID, i, cstime, transport.getLastServerResponse(), err);
@@ -155,7 +181,8 @@ public class SendMessageTask implements Callable<Map<Integer,Long>>
                      * Adds message id start time after message send to not
                      * account map time into message send time
                      */
-                    result.put(messageID, start);
+                    result.messageIDBeforeSendNanos.put(messageID, before);
+                    result.messageIDAfterSendNanos.put(messageID, after);
                 }
                 
             } finally

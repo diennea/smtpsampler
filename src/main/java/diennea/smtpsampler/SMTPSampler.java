@@ -206,7 +206,7 @@ public class SMTPSampler {
 
             
             
-            final List<Future<Map<Integer,Long>>> messageIDSendNanosFutures = new ArrayList<>(numthreads);
+            final List<Future<SendMessageTask.Result>> messageIDSendNanosFutures = new ArrayList<>(numthreads);
             
             /* Just for timeout, expressed in seconds we don't need fine grained data */
             long start = System.currentTimeMillis();
@@ -268,11 +268,15 @@ public class SMTPSampler {
                 
                 collector.finishReceive();
                 
-                final Map<Integer,Long> messageIDSendNanos = new HashMap<Integer,Long>();
-                for( Future<Map<Integer,Long>> future : messageIDSendNanosFutures )
-                    future.get().entrySet().stream().forEach(entry -> messageIDSendNanos.put(entry.getKey(), entry.getValue()));
+                final Map<Integer,Long> messageIDBeforeSendNanos = new HashMap<Integer,Long>();
+                final Map<Integer,Long> messageIDAfterSendNanos = new HashMap<Integer,Long>();
+                for( Future<SendMessageTask.Result> future : messageIDSendNanosFutures )
+                {
+                    future.get().getMessageIDBeforeSendNanos().entrySet().stream().forEach(entry -> messageIDBeforeSendNanos.put(entry.getKey(), entry.getValue()));
+                    future.get().getMessageIDAfterSendNanos() .entrySet().stream().forEach(entry -> messageIDAfterSendNanos.put(entry.getKey(), entry.getValue()));
+                }
                 
-                receiver.flushResults(messageIDSendNanos);
+                receiver.flushResults(messageIDBeforeSendNanos,messageIDAfterSendNanos);
             }
             
             

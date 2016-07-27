@@ -38,6 +38,7 @@ public class ConsoleResultCollector implements ResultCollector
     
     private final SummaryStatistics connectionTime = new SynchronizedSummaryStatistics();
     private final SummaryStatistics sendTime = new SynchronizedSummaryStatistics();
+    private final SummaryStatistics sendAndReceiveTime = new SynchronizedSummaryStatistics();
     private final SummaryStatistics receiveTime = new SynchronizedSummaryStatistics();
     
     private long testStart;
@@ -128,7 +129,7 @@ public class ConsoleResultCollector implements ResultCollector
         if (receive)
         {
             System.out.println("  Wall Round Trip Time:  " + formatNanos( format, totalReceiveTime, TimeUnit.SECONDS ) + " s");
-            System.out.println("  Real Round Trip Time:  " + formatNanos( format, receiveTime.getSum(), TimeUnit.SECONDS ) + " s");
+            System.out.println("  Real Round Trip Time:  " + formatNanos( format, sendAndReceiveTime.getSum(), TimeUnit.SECONDS ) + " s");
         }
         
         System.out.println("\n  Failed connections:    " + failedConnectionsCount);
@@ -199,31 +200,61 @@ public class ConsoleResultCollector implements ResultCollector
         
         if (receive && receivedMessageCount.intValue() > 0)
         {
-            System.out.println("\n  Message round trip time");
-            
-            System.out.println("    Average:             " + formatNanos( format, totalSendTime, TimeUnit.MILLISECONDS ) + " ms (on wall round trip time)");
-            System.out.println("                         " + formatNanos( format, receiveTime.getMean(), TimeUnit.MILLISECONDS ) + " ms (on pure round trip time)");
-            System.out.println("    Minimum:             " + formatNanos( format, receiveTime.getMin(), TimeUnit.MILLISECONDS ) + " ms");
-            System.out.println("    Maximum:             " + formatNanos( format, receiveTime.getMax(), TimeUnit.MILLISECONDS ) + " ms");
-            System.out.println("    Standard deviation:  " + formatNanos( format, receiveTime.getStandardDeviation(), TimeUnit.MILLISECONDS ));
-            
-            boolean distribution = receiveTime.getN() > 1;
-            if ( distribution )
             {
-                final TDistribution td = new TDistribution(receiveTime.getN() -1);
-                final double inversetd = td.inverseCumulativeProbability(1.0 - significance / 2);
-                final double confidence =  inversetd * receiveTime.getStandardDeviation() / Math.sqrt(receiveTime.getN());
+                System.out.println("\n  Message receive time");
                 
-                System.out.println("    Evaluation:          " + formatNanos( format, receiveTime.getMean(), TimeUnit.MILLISECONDS )
-                + " ms +-"  + formatNanos( format, confidence, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
-            } else
-            {
-                System.out.println("    Evaluation:          no evaluation");
+                System.out.println("    Average:             " + formatNanos( format, totalReceiveTime, TimeUnit.MILLISECONDS ) + " ms (on wall round trip time)");
+                System.out.println("                         " + formatNanos( format, receiveTime.getMean(), TimeUnit.MILLISECONDS ) + " ms (on real receive time)");
+                System.out.println("    Minimum:             " + formatNanos( format, receiveTime.getMin(), TimeUnit.MILLISECONDS ) + " ms");
+                System.out.println("    Maximum:             " + formatNanos( format, receiveTime.getMax(), TimeUnit.MILLISECONDS ) + " ms");
+                System.out.println("    Standard deviation:  " + formatNanos( format, receiveTime.getStandardDeviation(), TimeUnit.MILLISECONDS ));
+                
+                boolean distribution = receiveTime.getN() > 1;
+                if ( distribution )
+                {
+                    final TDistribution td = new TDistribution(receiveTime.getN() -1);
+                    final double inversetd = td.inverseCumulativeProbability(1.0 - significance / 2);
+                    final double confidence =  inversetd * receiveTime.getStandardDeviation() / Math.sqrt(receiveTime.getN());
+                    
+                    System.out.println("    Evaluation:          " + formatNanos( format, receiveTime.getMean(), TimeUnit.MILLISECONDS )
+                    + " ms +-"  + formatNanos( format, confidence, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
+                } else
+                {
+                    System.out.println("    Evaluation:          no evaluation");
+                }
+                
+                System.out.println("\n  Message receive speed");
+                System.out.println("    Average:             " + formatEventNanos( format, messageCount.longValue(), totalReceiveTime, TimeUnit.SECONDS ) + " msg/s (on wall round trip time)");
+                System.out.println("                         " + formatEventNanos( format, messageCount.longValue(), receiveTime.getSum(), TimeUnit.SECONDS ) + " msg/s (on real receive time)");
             }
             
-            System.out.println("\n  Message round trip speed");
-            System.out.println("    Average:             " + formatEventNanos( format, messageCount.longValue(), totalReceiveTime, TimeUnit.SECONDS ) + " msg/s (on wall round trip time)");
-            System.out.println("                         " + formatEventNanos( format, messageCount.longValue(), receiveTime.getSum(), TimeUnit.SECONDS ) + " msg/s (on real round trip time)");
+            {
+                System.out.println("\n  Message round trip time");
+                
+                System.out.println("    Average:             " + formatNanos( format, totalReceiveTime, TimeUnit.MILLISECONDS ) + " ms (on wall round trip time)");
+                System.out.println("                         " + formatNanos( format, sendAndReceiveTime.getMean(), TimeUnit.MILLISECONDS ) + " ms (on real round trip time)");
+                System.out.println("    Minimum:             " + formatNanos( format, sendAndReceiveTime.getMin(), TimeUnit.MILLISECONDS ) + " ms");
+                System.out.println("    Maximum:             " + formatNanos( format, sendAndReceiveTime.getMax(), TimeUnit.MILLISECONDS ) + " ms");
+                System.out.println("    Standard deviation:  " + formatNanos( format, sendAndReceiveTime.getStandardDeviation(), TimeUnit.MILLISECONDS ));
+                
+                boolean distribution = sendAndReceiveTime.getN() > 1;
+                if ( distribution )
+                {
+                    final TDistribution td = new TDistribution(sendAndReceiveTime.getN() -1);
+                    final double inversetd = td.inverseCumulativeProbability(1.0 - significance / 2);
+                    final double confidence =  inversetd * sendAndReceiveTime.getStandardDeviation() / Math.sqrt(sendAndReceiveTime.getN());
+                    
+                    System.out.println("    Evaluation:          " + formatNanos( format, sendAndReceiveTime.getMean(), TimeUnit.MILLISECONDS )
+                    + " ms +-"  + formatNanos( format, confidence, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
+                } else
+                {
+                    System.out.println("    Evaluation:          no evaluation");
+                }
+                
+                System.out.println("\n  Message round trip speed");
+                System.out.println("    Average:             " + formatEventNanos( format, messageCount.longValue(), totalReceiveTime, TimeUnit.SECONDS ) + " msg/s (on wall round trip time)");
+                System.out.println("                         " + formatEventNanos( format, messageCount.longValue(), sendAndReceiveTime.getSum(), TimeUnit.SECONDS ) + " msg/s (on real round trip time)");
+            }
         }
         
         if (messageCount.intValue() > 0)
@@ -271,13 +302,15 @@ public class ConsoleResultCollector implements ResultCollector
     }
     
     @Override
-    public void messageReceived(long nanoseconds)
+    public void messageReceived(long receivens, long beforesendns, long aftersendns)
     {
-        receiveTime.addValue(nanoseconds);
+        final long sendAndReceiveNS = receivens-beforesendns; 
+        sendAndReceiveTime.addValue(sendAndReceiveNS);
+        receiveTime.addValue(receivens-aftersendns);
         
         receivedMessageCount.increment();
         
-        write("Message received: " + formatNanos(NUMBER_FORMAT.get(), nanoseconds, TimeUnit.MILLISECONDS) + " ms");
+        write("Message received: " + formatNanos(NUMBER_FORMAT.get(), sendAndReceiveNS, TimeUnit.MILLISECONDS) + " ms");
     }
 
 }

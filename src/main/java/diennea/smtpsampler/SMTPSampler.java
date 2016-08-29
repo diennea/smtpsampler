@@ -158,7 +158,6 @@ public class SMTPSampler {
                 System.out.println("\ttimeout:" + timeout_seconds);
                 System.out.println("\tverbose:" + verbose);
                 System.out.println("\tjavamaildebug:" + javamaildebug);
-                
             }
 
             if (!auth) {
@@ -185,11 +184,13 @@ public class SMTPSampler {
             
             Session session = Session.getDefaultInstance(props);
 
+            
             ResultCollector collector = new ConsoleResultCollector(verbose,listen);
             
             String messageIDHeader = "X-BENCHMARK-MESSAGE-ID";
             AtomicInteger connectionIDGenerator = new AtomicInteger(0);
             AtomicInteger messageIDGenerator = new AtomicInteger(0);
+            
             
             if (listen)
             {
@@ -203,10 +204,7 @@ public class SMTPSampler {
             
             ExecutorService service = Executors.newFixedThreadPool(numthreads);
             
-
-            
-            
-            final List<Future<SendMessageTask.Result>> messageIDSendNanosFutures = new ArrayList<>(numthreads);
+            final List<Future<SendMessageTask.Result>> messageIDSendTimesFutures = new ArrayList<>(numthreads);
             
             /* Just for timeout, expressed in seconds we don't need fine grained data */
             long start = System.currentTimeMillis();
@@ -217,7 +215,7 @@ public class SMTPSampler {
                 int messageCount = Math.min(remaining, nummessagesperconnection);
                 remaining -= messageCount;
                 
-                messageIDSendNanosFutures.add(
+                messageIDSendTimesFutures.add(
                         service.submit(
                                 new SendMessageTask(
                                         collector,
@@ -268,15 +266,15 @@ public class SMTPSampler {
                 
                 collector.finishReceive();
                 
-                final Map<Integer,Long> messageIDBeforeSendNanos = new HashMap<Integer,Long>();
-                final Map<Integer,Long> messageIDAfterSendNanos = new HashMap<Integer,Long>();
-                for( Future<SendMessageTask.Result> future : messageIDSendNanosFutures )
+                final Map<Integer,Long> messageIDBeforeSendTimes = new HashMap<Integer,Long>();
+                final Map<Integer,Long> messageIDAfterSendTimes = new HashMap<Integer,Long>();
+                for( Future<SendMessageTask.Result> future : messageIDSendTimesFutures )
                 {
-                    future.get().getMessageIDBeforeSendNanos().entrySet().stream().forEach(entry -> messageIDBeforeSendNanos.put(entry.getKey(), entry.getValue()));
-                    future.get().getMessageIDAfterSendNanos() .entrySet().stream().forEach(entry -> messageIDAfterSendNanos.put(entry.getKey(), entry.getValue()));
+                    future.get().getMessageIDBeforeSendTimes().entrySet().stream().forEach(entry -> messageIDBeforeSendTimes.put(entry.getKey(), entry.getValue()));
+                    future.get().getMessageIDAfterSendTimes() .entrySet().stream().forEach(entry -> messageIDAfterSendTimes.put(entry.getKey(), entry.getValue()));
                 }
                 
-                receiver.flushResults(messageIDBeforeSendNanos,messageIDAfterSendNanos);
+                receiver.flushResults(messageIDBeforeSendTimes,messageIDAfterSendTimes);
             }
             
             

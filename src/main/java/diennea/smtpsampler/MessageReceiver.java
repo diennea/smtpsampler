@@ -33,9 +33,9 @@ public class MessageReceiver
     private final CountDownLatch countDown;
     private final SMTPServer server;
     
-    private final ConcurrentMap<Integer,Long> messageIDReceiveNanos;
+    private final ConcurrentMap<Integer,Long> messageIDReceiveTimes;
     
-    public MessageReceiver( ResultCollector resultCollector, int messages, String host, int port, String messageIDHeader ) throws UnknownHostException
+    public MessageReceiver(ResultCollector resultCollector, int messages, String host, int port, String messageIDHeader ) throws UnknownHostException
     {
         server = new SMTPServer( new MessageHandlerFactory()
         {
@@ -55,24 +55,23 @@ public class MessageReceiver
         this.messageIDHeader = messageIDHeader;
         
         this.countDown = new CountDownLatch(messages);
-        this.messageIDReceiveNanos = new ConcurrentHashMap<>(messages);
+        this.messageIDReceiveTimes = new ConcurrentHashMap<>(messages);
     }
     
-    public void flushResults(Map<Integer,Long> messageIDBeforeSendNanos, Map<Integer,Long> messageIDAfterSendNanos)
+    public void flushResults(Map<Integer,Long> messageIDBeforeSendTimes, Map<Integer,Long> messageIDAfterSendTimes)
     {
-        
-        for( Map.Entry<Integer,Long> entry : messageIDReceiveNanos.entrySet() )
+        for( Map.Entry<Integer,Long> entry : messageIDReceiveTimes.entrySet() )
         {
             Integer messageID = entry.getKey();
             
-            Long receive = messageIDReceiveNanos.get(messageID);
-            Long before  = messageIDBeforeSendNanos.get(messageID);
-            Long after   = messageIDAfterSendNanos.get(messageID);
+            Long receive = messageIDReceiveTimes.get(messageID);
+            
+            Long before = messageIDBeforeSendTimes.get(messageID);
+            Long after  = messageIDAfterSendTimes.get(messageID);
             
             if ( before != null )
-                resultCollector.messageReceived(receive, before, after);
+                resultCollector.messageReceived(receive, before, after );
         }
-        
         
     }
     
@@ -115,6 +114,15 @@ public class MessageReceiver
                MimeMessage message = new MimeMessage(null,data);
                 
                messageID = message.getHeader(messageIDHeader,null);
+               
+                /*
+                 * Save the time just after receive the message, this avoid
+                 * reschedulation timing overhead on massively concurrent
+                 * systems.
+                 */
+               long end = System.nanoTime();
+               
+               messageIDReceiveTimes.put(Integer.valueOf(messageID), end);
                 
             } catch (MessagingException e)
             {
@@ -125,13 +133,8 @@ public class MessageReceiver
         @Override
         public void done()
         {
-            long end = System.nanoTime();
-            
-            messageIDReceiveNanos.put(Integer.valueOf(messageID), end);
-            
             countDown.countDown();
         }
-        
     }
     
 }

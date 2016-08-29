@@ -19,6 +19,7 @@
  */
 package diennea.smtpsampler;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.mail.MessagingException;
 import javax.mail.Session;
+import javax.mail.URLName;
 import javax.mail.internet.MimeMessage;
 
 import com.sun.mail.smtp.SMTPTransport;
@@ -42,23 +44,23 @@ public class SendMessageTask implements Callable<Result>
 {
     public static final class Result
     {
-        private final Map<Integer,Long> messageIDBeforeSendNanos;
-        private final Map<Integer,Long> messageIDAfterSendNanos;
+        private final Map<Integer,Long> messageIDBeforeSendTimes;
+        private final Map<Integer,Long> messageIDAfterSendTimes;
         
         private Result( int size )
         {
-            messageIDBeforeSendNanos = new HashMap<>(size);
-            messageIDAfterSendNanos = new HashMap<>(size);
+            messageIDBeforeSendTimes = new HashMap<>(size);
+            messageIDAfterSendTimes = new HashMap<>(size);
         }
 
-        public Map<Integer, Long> getMessageIDBeforeSendNanos()
+        public Map<Integer, Long> getMessageIDBeforeSendTimes()
         {
-            return messageIDBeforeSendNanos;
+            return messageIDBeforeSendTimes;
         }
 
-        public Map<Integer, Long> getMessageIDAfterSendNanos()
+        public Map<Integer, Long> getMessageIDAfterSendTimes()
         {
-            return messageIDAfterSendNanos;
+            return messageIDAfterSendTimes;
         }
     }
     
@@ -117,19 +119,20 @@ public class SendMessageTask implements Callable<Result>
         this.messageIDHeader = messageIDHeader;
     }
     
+    
     @Override
     public Result call() throws Exception
     {
         final Result result = new Result(messageCount);
-//        Map<Integer,Long> result = new HashMap<>(messageCount);
         
         long mtime = 0;
-        long stime = 0;        
+        long stime = 0;
         long cstart = System.nanoTime();
         
         try
         {
-            SMTPTransport transport = (SMTPTransport) session.getTransport("smtp");
+            
+            CustomSMTPTransport transport = new CustomSMTPTransport(session, new URLName("smtp", host, port, null, null, null));
             
             try
             {
@@ -161,7 +164,16 @@ public class SendMessageTask implements Callable<Result>
                     {
                         transport.sendMessage(message, message.getAllRecipients());
                         
-                        after = System.nanoTime();
+                        /*
+                         * On multithread environment this thread could be
+                         * descheduled for a long time. It happens even that a
+                         * message is received before current thread finish to
+                         * read end data aknowledge. To avoid strange negative
+                         * timings we evaluate time on byte array send finish
+                         * and before send data terminator '.'
+                         */
+                        after = transport.time;
+                        
                         long cstime = after - before;
                         stime += cstime;
                         
@@ -169,7 +181,8 @@ public class SendMessageTask implements Callable<Result>
                         
                     } catch (Exception err)
                     {
-                        after = System.nanoTime();
+                        after = transport.time;
+                        
                         long cstime = after - before;
                         stime += cstime;
                         
@@ -181,8 +194,8 @@ public class SendMessageTask implements Callable<Result>
                      * Adds message id start time after message send to not
                      * account map time into message send time
                      */
-                    result.messageIDBeforeSendNanos.put(messageID, before);
-                    result.messageIDAfterSendNanos.put(messageID, after);
+                    result.messageIDBeforeSendTimes.put(messageID, before);
+                    result.messageIDAfterSendTimes.put(messageID, after);
                 }
                 
             } finally
@@ -202,6 +215,24 @@ public class SendMessageTask implements Callable<Result>
         }
         
         return result;
+    }
+    
+    private final class CustomSMTPTransport extends SMTPTransport
+    {
+        long time;
+        
+        public CustomSMTPTransport(Session session, URLName urlname)
+        {
+            super(session, urlname);
+        }
+        
+        @Override
+        protected void finishData() throws IOException, MessagingException
+        {
+            time = System.nanoTime();
+            
+            super.finishData();
+        }
     }
 
 }

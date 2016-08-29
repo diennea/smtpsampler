@@ -3,6 +3,7 @@ package diennea.smtpsampler.collectors;
 import java.text.DecimalFormat;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Supplier;
 
 import org.apache.commons.math3.distribution.TDistribution;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
@@ -22,7 +23,6 @@ public class ConsoleResultCollector implements ResultCollector
     {
         @Override protected DecimalFormat initialValue() { return new DecimalFormat("0.000"); }
     };
-    
     
     private final boolean verbose;
     private final boolean receive;
@@ -52,13 +52,13 @@ public class ConsoleResultCollector implements ResultCollector
         this.receive = receive;
     }
     
-    private void write(Object msg)
+    private void write(Supplier<Object> supplier)
     {
-        if (!verbose) {
+        if (!verbose)
             return;
-        }
-        System.out.println(msg);
-
+        
+        /* Produce output only if needed */
+        System.out.println(supplier.get());
     }
     
     @Override
@@ -80,30 +80,39 @@ public class ConsoleResultCollector implements ResultCollector
     }
 
     
-    private String formatNanos(DecimalFormat format, long time, TimeUnit dst)
+    
+    private String format(DecimalFormat format, long time, TimeUnit src, TimeUnit dst)
     {
-        double multiplier = dst.toNanos(1);
+        /* Avoid round up conversion of time unit */
+        
+        double multiplier = src.convert(1, dst);
         
         return format.format( ((double) time) / multiplier );
     }
     
-    private String formatNanos(DecimalFormat format, double time, TimeUnit dst)
+    private String format(DecimalFormat format, double time, TimeUnit src, TimeUnit dst)
     {
-        double multiplier = dst.toNanos(1);
+        /* Avoid round up conversion of time unit */
+        
+        double multiplier = src.convert(1, dst);
         
         return format.format( time / multiplier );
     }
     
-    private String formatEventNanos(DecimalFormat format, long events, long time, TimeUnit dst)
+    private String formatEvent(DecimalFormat format, long events, long time, TimeUnit src, TimeUnit dst)
     {
-        double multiplier = dst.toNanos(1);
+        /* Avoid round up conversion of time unit */
+        
+        double multiplier = src.convert(1, dst);
         
         return format.format( (events * multiplier) /  ((double) time) );
     }
     
-    private String formatEventNanos(DecimalFormat format, long events, double time, TimeUnit dst)
+    private String formatEvent(DecimalFormat format, long events, double time, TimeUnit src, TimeUnit dst)
     {
-        double multiplier = dst.toNanos(1);
+        /* Avoid round up conversion of time unit */
+        
+        double multiplier = src.convert(1, dst);
         
         return format.format( (events * multiplier) /  time );
     }
@@ -121,15 +130,17 @@ public class ConsoleResultCollector implements ResultCollector
         
         System.out.println("Report:");
         
-        System.out.println("\n  Wall Clock:            " + formatNanos( format, totalTestTime, TimeUnit.SECONDS ) + " s");
-        System.out.println("  Wall Send Time:        " + formatNanos( format, totalSendTime, TimeUnit.SECONDS ) + " s");
-        System.out.println("  Real Send Time:        " + formatNanos( format, sendTime.getSum(), TimeUnit.SECONDS ) + " s");
-        System.out.println("  Real Connection Time:  " + formatNanos( format, connectionTime.getSum(), TimeUnit.SECONDS ) + " s");
+        System.out.println("\n  Wall Clock:            " + format( format, totalTestTime, TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " s");
+        System.out.println("  Wall Send Time:        " + format( format, totalSendTime, TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " s");
+        System.out.println("  Real Send Time:        " + format( format, sendTime.getSum(), TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " s");
+        System.out.println("  Real Connection Time:  " + format( format, connectionTime.getSum(), TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " s");
        
         if (receive)
         {
-            System.out.println("  Wall Round Trip Time:  " + formatNanos( format, totalReceiveTime, TimeUnit.SECONDS ) + " s");
-            System.out.println("  Real Round Trip Time:  " + formatNanos( format, sendAndReceiveTime.getSum(), TimeUnit.SECONDS ) + " s");
+            System.out.println("  Wall Round Trip Time:  " + format( format, totalReceiveTime, TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " s");
+            System.out.println("  Real Round Trip Time:  " + format( format, sendAndReceiveTime.getSum(), TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " s");
+            
+            System.out.println("  Real Receive Time:     " + format( format, receiveTime.getSum(), TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " s");
         }
         
         System.out.println("\n  Failed connections:    " + failedConnectionsCount);
@@ -147,11 +158,11 @@ public class ConsoleResultCollector implements ResultCollector
             
             System.out.println("\n  Connection time");
             
-            System.out.println("    Average:             " + formatNanos( format, totalSendTime, TimeUnit.MILLISECONDS ) + " ms (on wall send time)");
-            System.out.println("                         " + formatNanos( format, connectionTime.getMean(), TimeUnit.MILLISECONDS ) + " ms (on real connection time)");
-            System.out.println("    Minimum:             " + formatNanos( format, connectionTime.getMin(), TimeUnit.MILLISECONDS ) + " ms");
-            System.out.println("    Maximum:             " + formatNanos( format, connectionTime.getMax(), TimeUnit.MILLISECONDS ) + " ms");
-            System.out.println("    Standard deviation:  " + formatNanos( format, connectionTime.getStandardDeviation(), TimeUnit.MILLISECONDS ));
+            System.out.println("    Average:             " + format( format, totalSendTime, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms (on wall send time)");
+            System.out.println("                         " + format( format, connectionTime.getMean(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms (on real connection time)");
+            System.out.println("    Minimum:             " + format( format, connectionTime.getMin(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms");
+            System.out.println("    Maximum:             " + format( format, connectionTime.getMax(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms");
+            System.out.println("    Standard deviation:  " + format( format, connectionTime.getStandardDeviation(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ));
             
             boolean distribution = connectionTime.getN() > 1;
             if ( distribution )
@@ -160,8 +171,8 @@ public class ConsoleResultCollector implements ResultCollector
                 final double inversetd = td.inverseCumulativeProbability(1.0 - significance / 2);
                 final double confidence =  inversetd * connectionTime.getStandardDeviation() / Math.sqrt(connectionTime.getN());
                 
-                System.out.println("    Evaluation:          " + formatNanos( format, connectionTime.getMean(), TimeUnit.MILLISECONDS )
-                    + " ms +-"  + formatNanos( format, confidence, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
+                System.out.println("    Evaluation:          " + format( format, connectionTime.getMean(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS )
+                    + " ms +-"  + format( format, confidence, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
             } else
             {
                 System.out.println("    Evaluation:          no evaluation");
@@ -173,11 +184,11 @@ public class ConsoleResultCollector implements ResultCollector
             
             System.out.println("\n  Message delivery time");
             
-            System.out.println("    Average:             " + formatNanos( format, totalSendTime, TimeUnit.MILLISECONDS ) + " ms (on wall send time)");
-            System.out.println("                         " + formatNanos( format, sendTime.getMean(), TimeUnit.MILLISECONDS ) + " ms (on real send time)");
-            System.out.println("    Minimum:             " + formatNanos( format, sendTime.getMin(), TimeUnit.MILLISECONDS ) + " ms");
-            System.out.println("    Maximum:             " + formatNanos( format, sendTime.getMax(), TimeUnit.MILLISECONDS ) + " ms");
-            System.out.println("    Standard deviation:  " + formatNanos( format, sendTime.getStandardDeviation(), TimeUnit.MILLISECONDS ));
+            System.out.println("    Average:             " + format( format, totalSendTime, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms (on wall send time)");
+            System.out.println("                         " + format( format, sendTime.getMean(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms (on real send time)");
+            System.out.println("    Minimum:             " + format( format, sendTime.getMin(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms");
+            System.out.println("    Maximum:             " + format( format, sendTime.getMax(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms");
+            System.out.println("    Standard deviation:  " + format( format, sendTime.getStandardDeviation(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ));
             
             boolean distribution = sendTime.getN() > 1;
             if ( distribution )
@@ -186,16 +197,16 @@ public class ConsoleResultCollector implements ResultCollector
                 final double inversetd = td.inverseCumulativeProbability(1.0 - significance / 2);
                 final double confidence =  inversetd * sendTime.getStandardDeviation() / Math.sqrt(sendTime.getN());
                 
-                System.out.println("    Evaluation:          " + formatNanos( format, sendTime.getMean(), TimeUnit.MILLISECONDS )
-                    + " ms +-"  + formatNanos( format, confidence, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
+                System.out.println("    Evaluation:          " + format( format, sendTime.getMean(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS )
+                    + " ms +-"  + format( format, confidence, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
             } else
             {
                 System.out.println("    Evaluation:          no evaluation");
             }
             
             System.out.println("\n  Message delivery speed");
-            System.out.println("    Average:             " + formatEventNanos( format, messageCount.longValue(), totalSendTime, TimeUnit.SECONDS ) + " msg/s (on wall send time)");
-            System.out.println("                         " + formatEventNanos( format, messageCount.longValue(), sendTime.getSum(), TimeUnit.SECONDS ) + " msg/s (on real send time)");
+            System.out.println("    Average:             " + formatEvent( format, messageCount.longValue(), totalSendTime, TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " msg/s (on wall send time)");
+            System.out.println("                         " + formatEvent( format, messageCount.longValue(), sendTime.getSum(), TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " msg/s (on real send time)");
         }
         
         if (receive && receivedMessageCount.intValue() > 0)
@@ -203,11 +214,11 @@ public class ConsoleResultCollector implements ResultCollector
             {
                 System.out.println("\n  Message receive time");
                 
-                System.out.println("    Average:             " + formatNanos( format, totalReceiveTime, TimeUnit.MILLISECONDS ) + " ms (on wall round trip time)");
-                System.out.println("                         " + formatNanos( format, receiveTime.getMean(), TimeUnit.MILLISECONDS ) + " ms (on real receive time)");
-                System.out.println("    Minimum:             " + formatNanos( format, receiveTime.getMin(), TimeUnit.MILLISECONDS ) + " ms");
-                System.out.println("    Maximum:             " + formatNanos( format, receiveTime.getMax(), TimeUnit.MILLISECONDS ) + " ms");
-                System.out.println("    Standard deviation:  " + formatNanos( format, receiveTime.getStandardDeviation(), TimeUnit.MILLISECONDS ));
+                System.out.println("    Average:             " + format( format, totalReceiveTime, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms (on wall round trip time)");
+                System.out.println("                         " + format( format, receiveTime.getMean(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms (on real receive time)");
+                System.out.println("    Minimum:             " + format( format, receiveTime.getMin(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms");
+                System.out.println("    Maximum:             " + format( format, receiveTime.getMax(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms");
+                System.out.println("    Standard deviation:  " + format( format, receiveTime.getStandardDeviation(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ));
                 
                 boolean distribution = receiveTime.getN() > 1;
                 if ( distribution )
@@ -216,26 +227,26 @@ public class ConsoleResultCollector implements ResultCollector
                     final double inversetd = td.inverseCumulativeProbability(1.0 - significance / 2);
                     final double confidence =  inversetd * receiveTime.getStandardDeviation() / Math.sqrt(receiveTime.getN());
                     
-                    System.out.println("    Evaluation:          " + formatNanos( format, receiveTime.getMean(), TimeUnit.MILLISECONDS )
-                    + " ms +-"  + formatNanos( format, confidence, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
+                    System.out.println("    Evaluation:          " + format( format, receiveTime.getMean(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS )
+                    + " ms +-"  + format( format, confidence, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
                 } else
                 {
                     System.out.println("    Evaluation:          no evaluation");
                 }
                 
                 System.out.println("\n  Message receive speed");
-                System.out.println("    Average:             " + formatEventNanos( format, messageCount.longValue(), totalReceiveTime, TimeUnit.SECONDS ) + " msg/s (on wall round trip time)");
-                System.out.println("                         " + formatEventNanos( format, messageCount.longValue(), receiveTime.getSum(), TimeUnit.SECONDS ) + " msg/s (on real receive time)");
+                System.out.println("    Average:             " + formatEvent( format, messageCount.longValue(), totalReceiveTime, TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " msg/s (on wall round trip time)");
+                System.out.println("                         " + formatEvent( format, messageCount.longValue(), receiveTime.getSum(), TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " msg/s (on real receive time)");
             }
             
             {
                 System.out.println("\n  Message round trip time");
                 
-                System.out.println("    Average:             " + formatNanos( format, totalReceiveTime, TimeUnit.MILLISECONDS ) + " ms (on wall round trip time)");
-                System.out.println("                         " + formatNanos( format, sendAndReceiveTime.getMean(), TimeUnit.MILLISECONDS ) + " ms (on real round trip time)");
-                System.out.println("    Minimum:             " + formatNanos( format, sendAndReceiveTime.getMin(), TimeUnit.MILLISECONDS ) + " ms");
-                System.out.println("    Maximum:             " + formatNanos( format, sendAndReceiveTime.getMax(), TimeUnit.MILLISECONDS ) + " ms");
-                System.out.println("    Standard deviation:  " + formatNanos( format, sendAndReceiveTime.getStandardDeviation(), TimeUnit.MILLISECONDS ));
+                System.out.println("    Average:             " + format( format, totalReceiveTime, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms (on wall round trip time)");
+                System.out.println("                         " + format( format, sendAndReceiveTime.getMean(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms (on real round trip time)");
+                System.out.println("    Minimum:             " + format( format, sendAndReceiveTime.getMin(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms");
+                System.out.println("    Maximum:             " + format( format, sendAndReceiveTime.getMax(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms");
+                System.out.println("    Standard deviation:  " + format( format, sendAndReceiveTime.getStandardDeviation(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ));
                 
                 boolean distribution = sendAndReceiveTime.getN() > 1;
                 if ( distribution )
@@ -244,73 +255,73 @@ public class ConsoleResultCollector implements ResultCollector
                     final double inversetd = td.inverseCumulativeProbability(1.0 - significance / 2);
                     final double confidence =  inversetd * sendAndReceiveTime.getStandardDeviation() / Math.sqrt(sendAndReceiveTime.getN());
                     
-                    System.out.println("    Evaluation:          " + formatNanos( format, sendAndReceiveTime.getMean(), TimeUnit.MILLISECONDS )
-                    + " ms +-"  + formatNanos( format, confidence, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
+                    System.out.println("    Evaluation:          " + format( format, sendAndReceiveTime.getMean(), TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS )
+                    + " ms +-"  + format( format, confidence, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS ) + " ms at " + (int) ((1.0 - significance) * 100) + "%");
                 } else
                 {
                     System.out.println("    Evaluation:          no evaluation");
                 }
                 
                 System.out.println("\n  Message round trip speed");
-                System.out.println("    Average:             " + formatEventNanos( format, messageCount.longValue(), totalReceiveTime, TimeUnit.SECONDS ) + " msg/s (on wall round trip time)");
-                System.out.println("                         " + formatEventNanos( format, messageCount.longValue(), sendAndReceiveTime.getSum(), TimeUnit.SECONDS ) + " msg/s (on real round trip time)");
+                System.out.println("    Average:             " + formatEvent( format, messageCount.longValue(), totalReceiveTime, TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " msg/s (on wall round trip time)");
+                System.out.println("                         " + formatEvent( format, messageCount.longValue(), sendAndReceiveTime.getSum(), TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " msg/s (on real round trip time)");
             }
         }
         
         if (messageCount.intValue() > 0)
-            System.out.println("\n  Total thoughtput:      " + formatEventNanos( format, messageCount.longValue(), totalTestTime, TimeUnit.SECONDS ) + " msg/s (on wall test time)");
+            System.out.println("\n  Total thoughtput:      " + formatEvent( format, messageCount.longValue(), totalTestTime, TimeUnit.NANOSECONDS, TimeUnit.SECONDS ) + " msg/s (on wall test time)");
         
     }
     
     @Override
-    public void connectionHandled(int connectionId, long nanoseconds, Throwable error)
+    public void connectionHandled(int connectionId, long time, Throwable error)
     {
         if ( error != null )
         {
             failedConnectionsCount.increment();
             
-            write("Connection failed: " + formatNanos(NUMBER_FORMAT.get(), nanoseconds, TimeUnit.MILLISECONDS) + " ms error: " + error);
+            write(() -> "Connection failed: " + format(NUMBER_FORMAT.get(), time, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS) + " ms error: " + error);
             
         } else
         {
-            write("Connection handled: " + formatNanos(NUMBER_FORMAT.get(), nanoseconds, TimeUnit.MILLISECONDS) + " ms");
+            write(() -> "Connection handled: " + format(NUMBER_FORMAT.get(), time, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS) + " ms");
         }
         
         
         connectionCount.increment();
-        connectionTime.addValue(nanoseconds);
+        connectionTime.addValue(time);
     }
     
     @Override
-    public void messageSent(int connectionId, int messageNumber, long nanoseconds, String lastServerResponse, Throwable error)
+    public void messageSent(int connectionId, int messageNumber, long time, String lastServerResponse, Throwable error)
     {
-        sendTime.addValue(nanoseconds);
+        sendTime.addValue(time);
         
         messageCount.increment();
         
-        lastServerResponse = lastServerResponse == null ? "" : lastServerResponse.trim();
+        final String trimmedResponse = lastServerResponse == null ? "" : lastServerResponse.trim();
         
         if (error != null)
         {
             failedMessageCount.increment();
-            write("Message failed: " + connectionId + "/" + messageNumber + " " + formatNanos(NUMBER_FORMAT.get(), nanoseconds, TimeUnit.MILLISECONDS) + " ms " + lastServerResponse + ": " + error);
+            write(() -> "Message failed: " + connectionId + "/" + messageNumber + " " + format(NUMBER_FORMAT.get(), time, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS) + " ms " + trimmedResponse + ": " + error);
         } else
         {
             deliveredMessageCount.increment();
-            write("Message delivered: " + connectionId + "/" + messageNumber + " " + formatNanos(NUMBER_FORMAT.get(), nanoseconds, TimeUnit.MILLISECONDS) + " ms " + lastServerResponse);
+            write(() -> "Message delivered: " + connectionId + "/" + messageNumber + " " + format(NUMBER_FORMAT.get(), time, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS) + " ms " + trimmedResponse);
         }
     }
     
     @Override
-    public void messageReceived(long receivens, long beforesendns, long aftersendns)
+    public void messageReceived(long receive, long before, long after)
     {
-        final long sendAndReceiveNS = receivens-beforesendns; 
-        sendAndReceiveTime.addValue(sendAndReceiveNS);
-        receiveTime.addValue(receivens-aftersendns);
+        final long sendAndReceive = receive-before; 
+        sendAndReceiveTime.addValue(sendAndReceive);
+        receiveTime.addValue(receive-after);
         
         receivedMessageCount.increment();
         
-        write("Message received: " + formatNanos(NUMBER_FORMAT.get(), sendAndReceiveNS, TimeUnit.MILLISECONDS) + " ms");
+        write(() -> "Message received: " + format(NUMBER_FORMAT.get(), sendAndReceive, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS) + " ms");
     }
 
 }

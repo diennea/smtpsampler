@@ -19,13 +19,16 @@
  */
 package diennea.smtpsampler;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  * Collects results
  *
  * @author enrico.olivelli
  */
-public interface ResultCollector {
-
+public interface ResultCollector
+{
+    
     public void start();
 
     public void finishSend();
@@ -34,9 +37,9 @@ public interface ResultCollector {
     
     public void finished();
 
-    public void messageSent(int connectionId, int messageNumber, long nanoseconds, String lastServerResponse, Throwable error);
+    public void messageSent(int connectionId, int messageNumber, long time, String lastServerResponse, Throwable error);
     
-    public void connectionHandled(int connectionId, long nanoseconds, Throwable error );
+    public void connectionHandled(int connectionId, long time, Throwable error );
     
     public void messageReceived(long receivens, long beforesendns, long aftersendns);
 
